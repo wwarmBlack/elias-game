@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Элиас Online</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ЭКРАН 1: ГЛАВНАЯ (создать / войти) -->
+  <section id="screen-home" class="screen active">
+    <div class="card">
+      <h1 class="logo">🎤 Элиас</h1>
+      <p class="subtitle">Объясни слово — команда угадывает</p>
+
+      <div id="home-join" class="hidden">
+        <h2>Присоединиться</h2>
+        <input id="join-code" maxlength="6" placeholder="КОД КОМНАТЫ" autocapitalize="characters" />
+        <input id="join-name" maxlength="24" placeholder="Ваше имя" />
+        <button id="btn-join" class="btn primary">Войти в комнату</button>
+        <button id="btn-show-create" class="btn link">У меня нет кода — создать комнату</button>
+      </div>
+
+      <div id="home-create">
+        <h2>Создать игру</h2>
+        <input id="create-name" maxlength="24" placeholder="Ваше имя (вы — хост)" />
+        <button id="btn-create" class="btn primary">Создать комнату</button>
+        <button id="btn-show-join" class="btn link">У меня есть код — присоединиться</button>
+      </div>
+
+      <p id="home-error" class="error hidden"></p>
+    </div>
+  </section>
+
+  <!-- ЭКРАН 2: ЛОББИ -->
+  <section id="screen-lobby" class="screen">
+    <div class="card wide">
+      <div class="lobby-header">
+        <div>
+          <div class="room-label">Код комнаты</div>
+          <div class="room-code" id="lobby-code">—</div>
+        </div>
+        <button id="btn-copy-link" class="btn small">🔗 Скопировать ссылку</button>
+      </div>
+
+      <div id="host-settings" class="settings-box hidden">
+        <h3>Настройки игры (хост)</h3>
+        <div class="settings-row">
+          <label>Время на ход (сек)</label>
+          <input id="set-turn-seconds" type="number" min="15" max="180" />
+        </div>
+        <div class="settings-row">
+          <label>Режим победы</label>
+          <select id="set-win-mode">
+            <option value="score">До набора очков</option>
+            <option value="rounds">Фиксированное число кругов</option>
+          </select>
+        </div>
+        <div class="settings-row" id="row-target-score">
+          <label>Очков для победы</label>
+          <input id="set-target-score" type="number" min="5" max="200" />
+        </div>
+        <div class="settings-row hidden" id="row-max-rounds">
+          <label>Количество кругов</label>
+          <input id="set-max-rounds" type="number" min="1" max="30" />
+        </div>
+        <button id="btn-add-team" class="btn small">+ Добавить команду</button>
+      </div>
+
+      <h3>Команды</h3>
+      <div id="teams-container" class="teams-container"></div>
+
+      <h3>Без команды</h3>
+      <div id="unassigned-list" class="unassigned-list"></div>
+
+      <button id="btn-start-game" class="btn primary big hidden">Начать игру ▶</button>
+      <p id="lobby-error" class="error hidden"></p>
+    </div>
+  </section>
+
+  <!-- ЭКРАН 3: ИГРА -->
+  <section id="screen-game" class="screen">
+    <div class="card wide">
+      <div class="game-topbar">
+        <div id="scoreboard" class="scoreboard"></div>
+        <div id="timer" class="timer">60</div>
+      </div>
+
+      <!-- Вид объясняющего -->
+      <div id="view-explainer" class="hidden game-view">
+        <div class="turn-label">Ваш ход — объясняйте!</div>
+        <div id="word-card" class="word-card">слово</div>
+        <div class="explainer-buttons">
+          <button id="btn-skip" class="btn skip">Пропустить</button>
+          <button id="btn-correct" class="btn correct">Угадали ✓</button>
+        </div>
+        <div class="guessed-count">Угадано в этом ходу: <span id="guessed-count">0</span></div>
+      </div>
+
+      <!-- Вид своей команды (не объясняющий) -->
+      <div id="view-teammate" class="hidden game-view">
+        <div class="turn-label">Ваша команда объясняет!</div>
+        <div class="explainer-name">Объясняет: <span id="teammate-explainer-name">—</span></div>
+        <div class="big-emoji">👂 Угадывайте вслух!</div>
+        <div class="guessed-count">Угадано в этом ходу: <span id="guessed-count-2">0</span></div>
+      </div>
+
+      <!-- Вид другой команды -->
+      <div id="view-other" class="hidden game-view">
+        <div class="turn-label">Ход команды «<span id="other-team-name">—</span>»</div>
+        <div class="big-emoji">⏳ Ждите своей очереди</div>
+      </div>
+
+      <!-- Итоги хода -->
+      <div id="view-summary" class="hidden game-view">
+        <div class="turn-label">Ход команды «<span id="summary-team-name">—</span>» завершён</div>
+        <div class="summary-score">Угадано слов: <span id="summary-correct">0</span></div>
+        <ul id="summary-words" class="summary-words"></ul>
+        <button id="btn-continue" class="btn primary big hidden">Следующий ход ▶</button>
+        <p id="wait-host" class="muted hidden">Ждём, когда хост запустит следующий ход…</p>
+      </div>
+
+      <!-- Финал игры -->
+      <div id="view-finished" class="hidden game-view">
+        <div class="turn-label">🏆 Игра завершена!</div>
+        <div class="winner-name" id="winner-name">—</div>
+        <div id="final-scoreboard" class="final-scoreboard"></div>
+        <button id="btn-restart" class="btn primary big hidden">Новая игра</button>
+        <p class="muted hidden" id="wait-host-2">Ждём хоста…</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
