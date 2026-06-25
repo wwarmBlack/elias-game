@@ -29,6 +29,46 @@ let lastRoomCode = localStorage.getItem("eliasRoomCode") || "";
 let lastName = localStorage.getItem("eliasName") || "";
 myName = lastName;
 
+// ---------- хаб: выбор игры ----------
+let selectedGameType = "elias"; // "elias" | "hundredToOne"
+const GAME_LABELS = {
+  elias: { logo: "🎤 Элиас", subtitle: "Объясни слово — команда угадывает" },
+  hundredToOne: { logo: "💯 100 к 1", subtitle: "Угадайте самые популярные (или редкие) ответы" },
+};
+function updateHomeHeader() {
+  const labels = GAME_LABELS[selectedGameType] || GAME_LABELS.elias;
+  setText("home-logo", labels.logo);
+  setText("home-subtitle", labels.subtitle);
+  $("create-elias-options").classList.toggle("hidden", selectedGameType !== "elias");
+}
+function pickGame(gameType) {
+  selectedGameType = gameType;
+  updateHomeHeader();
+  show("screen-home");
+  showHomeSection("home-create");
+}
+$("pick-elias").onclick = () => pickGame("elias");
+$("pick-h2o").onclick = () => pickGame("hundredToOne");
+$("btn-hub-show-join").onclick = () => {
+  show("screen-home");
+  showHomeSection("home-join");
+};
+$("btn-hub-show-rooms").onclick = () => {
+  show("screen-home");
+  showHomeSection("home-rooms");
+};
+$("btn-home-back-1").onclick = () => show("screen-hub");
+$("btn-home-back-2").onclick = () => show("screen-hub");
+updateHomeHeader();
+
+// Если есть сохранённая комната — сразу показываем экран переподключения,
+// минуя хаб (комната уже выбрана раньше).
+if (lastRoomCode) {
+  show("screen-home");
+  $("reconnecting").classList.remove("hidden");
+  $("home-content").classList.add("hidden");
+}
+
 function rememberRoom(code, name) {
   localStorage.setItem("eliasRoomCode", code);
   if (name) localStorage.setItem("eliasName", name);
@@ -126,6 +166,7 @@ $("btn-create").onclick = () => {
     password: $("create-password").value.trim(),
     category: $("create-category").value,
     penalizeSkips: $("create-penalize").checked,
+    gameType: selectedGameType,
     playerToken,
   });
 };
@@ -200,6 +241,7 @@ $("set-target-score").onchange = pushSettings;
 $("set-max-rounds").onchange = pushSettings;
 $("set-category").onchange = pushSettings;
 $("set-penalize").onchange = pushSettings;
+$("set-h2o-rounds").onchange = pushSettings;
 
 function pushSettings() {
   socket.emit("update_settings", {
@@ -209,6 +251,7 @@ function pushSettings() {
     maxRounds: parseInt($("set-max-rounds").value, 10),
     wordCategory: $("set-category").value,
     penalizeSkips: $("set-penalize").checked,
+    h2oRounds: parseInt($("set-h2o-rounds").value, 10),
   });
 }
 
@@ -225,6 +268,21 @@ $("btn-correct").onclick = () => socket.emit("word_result", { result: "correct" 
 $("btn-skip").onclick = () => socket.emit("word_result", { result: "skip" });
 $("btn-continue").onclick = () => socket.emit("continue_after_summary");
 $("btn-restart").onclick = () => socket.emit("start_game");
+
+// ---------- "100 к 1": капитан и ответы ----------
+function sendH2OGuess() {
+  const input = $("h2o-guess-input");
+  const val = input.value.trim();
+  if (!val) return;
+  socket.emit("h2o_guess", { text: val });
+  input.value = "";
+  input.focus();
+}
+$("btn-h2o-guess").onclick = sendH2OGuess;
+$("h2o-guess-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendH2OGuess();
+});
+$("btn-h2o-continue").onclick = () => socket.emit("continue_after_summary");
 
 // ---------- основной рендер по состоянию с сервера ----------
 socket.on("state", (state) => {
@@ -248,6 +306,7 @@ socket.on("state", (state) => {
 });
 
 function renderLobby(state) {
+  const isH2O = state.gameType === "hundredToOne";
   setText("lobby-code", state.code);
   $("host-settings").classList.toggle("hidden", !state.isHost);
   $("set-turn-seconds").value = state.settings.turnSeconds;
@@ -256,11 +315,18 @@ function renderLobby(state) {
   $("set-max-rounds").value = state.settings.maxRounds;
   $("set-category").value = state.settings.wordCategory;
   $("set-penalize").checked = !!state.settings.penalizeSkips;
+  $("set-h2o-rounds").value = state.settings.h2oRounds;
   $("set-password").placeholder = state.hasPassword ? "Пароль установлен (оставьте пустым, чтобы убрать)" : "Без пароля";
-  $("row-target-score").classList.toggle("hidden", state.settings.winMode === "rounds");
-  $("row-max-rounds").classList.toggle("hidden", state.settings.winMode !== "rounds");
 
-  $("mid-game-notice").classList.toggle("hidden", state.status === "lobby");
+  document.querySelectorAll(".elias-only").forEach((el) => el.classList.toggle("hidden", isH2O));
+  document.querySelectorAll(".h2o-only").forEach((el) => el.classList.toggle("hidden", !isH2O));
+  if (!isH2O) {
+    $("row-target-score").classList.toggle("hidden", state.settings.winMode === "rounds");
+    $("row-max-rounds").classList.toggle("hidden", state.settings.winMode !== "rounds");
+  }
+
+  $("mid-game-notice").classList.toggle("hidden", state.status === "lobby" || isH2O);
+  $("h2o-captain-notice").classList.toggle("hidden", !isH2O);
 
   const container = $("teams-container");
   container.innerHTML = "";
@@ -298,7 +364,7 @@ function renderLobby(state) {
     members.className = "team-members";
     team.members.forEach((m) => {
       const chip = document.createElement("span");
-      chip.className = "member-chip" + (m.connected ? "" : " offline");
+      chip.className = "member-chip" + (m.connected ? "" : " offline") + (isH2O && m.id === team.captainId ? " is-captain" : "");
       chip.textContent = m.name + (m.id === state.me?.id ? " (вы)" : "");
       members.appendChild(chip);
     });
@@ -310,6 +376,13 @@ function renderLobby(state) {
       joinBtn.textContent = "Присоединиться";
       joinBtn.onclick = () => socket.emit("choose_team", { teamId: team.id });
       box.appendChild(joinBtn);
+    } else if (isH2O) {
+      const amCaptain = team.captainId === state.me?.id;
+      const capBtn = document.createElement("button");
+      capBtn.className = "captain-btn" + (amCaptain ? " is-captain" : "");
+      capBtn.textContent = amCaptain ? "👑 Вы капитан" : "Стать капитаном";
+      capBtn.onclick = () => socket.emit("set_captain", { teamId: team.id });
+      box.appendChild(capBtn);
     }
 
     container.appendChild(box);
@@ -346,14 +419,25 @@ function renderScoreboard(state) {
 }
 
 function hideAllGameViews() {
-  ["view-explainer", "view-teammate", "view-other", "view-summary", "view-finished"].forEach((id) =>
-    $(id).classList.add("hidden")
-  );
+  [
+    "view-explainer",
+    "view-teammate",
+    "view-other",
+    "view-summary",
+    "view-h2o-playing",
+    "view-h2o-summary",
+    "view-finished",
+  ].forEach((id) => $(id).classList.add("hidden"));
 }
 
 function renderGame(state) {
   renderScoreboard(state);
   hideAllGameViews();
+
+  if (state.gameType === "hundredToOne") {
+    renderH2OGame(state);
+    return;
+  }
 
   if (state.status === "playing" && state.turn) {
     $("timer").textContent = state.turn.remaining;
@@ -411,6 +495,104 @@ function renderGame(state) {
         row.className = "final-row";
         row.style.background = t.color;
         row.innerHTML = `<span>${t.name}</span><span>${t.score}</span>`;
+        fs.appendChild(row);
+      });
+    $("btn-restart").classList.toggle("hidden", !state.isHost);
+    $("wait-host-2").classList.toggle("hidden", !!state.isHost);
+  }
+}
+
+function renderH2OGame(state) {
+  if (state.status === "playing" && state.h2o) {
+    $("timer").textContent = "💯";
+    $("view-h2o-playing").classList.remove("hidden");
+    const h = state.h2o;
+    setText(
+      "h2o-round-label",
+      `Раунд ${h.roundIndex + 1} из ${h.totalRounds} · ${h.roundType === "reverse" ? "обратный (редкие ответы дороже)" : "обычный"}`
+    );
+    setText("h2o-prompt", h.prompt || "—");
+
+    const board = $("h2o-board");
+    board.innerHTML = "";
+    h.answers.forEach((a) => {
+      const slot = document.createElement("div");
+      slot.className = "h2o-slot" + (a.revealed ? " revealed" : "");
+      const left = document.createElement("span");
+      left.textContent = a.revealed ? a.text : "?????";
+      const right = document.createElement("span");
+      right.className = "slot-points";
+      right.textContent = a.points;
+      slot.appendChild(left);
+      slot.appendChild(right);
+      board.appendChild(slot);
+    });
+
+    setText("h2o-strikes", "Промахи: " + "✗ ".repeat(h.strikes) + "○ ".repeat(Math.max(0, h.maxStrikes - h.strikes)));
+
+    const activeTeam = state.teams.find((t) => t.id === h.activeTeamId);
+    setText("h2o-active-team", `Отвечает команда «${activeTeam ? activeTeam.name : "—"}»`);
+
+    const amCaptain = !!activeTeam && activeTeam.captainId === state.me?.id;
+    $("h2o-captain-input-box").classList.toggle("hidden", !amCaptain);
+    $("h2o-wait-captain").classList.toggle("hidden", amCaptain);
+  } else if (state.status === "turn_summary" && state.lastSummary && state.lastSummary.gameType === "hundredToOne") {
+    $("timer").textContent = "—";
+    $("view-h2o-summary").classList.remove("hidden");
+    const s = state.lastSummary;
+    setText("h2o-summary-prompt", s.prompt);
+
+    const list = $("h2o-summary-answers");
+    list.innerHTML = "";
+    s.answers.forEach((a) => {
+      const li = document.createElement("li");
+      li.className = a.revealed ? "" : "missed";
+      const word = document.createElement("span");
+      word.textContent = a.text;
+      const pts = document.createElement("span");
+      pts.textContent = (a.revealed ? "+" : "") + a.points;
+      li.appendChild(word);
+      li.appendChild(pts);
+      list.appendChild(li);
+    });
+
+    const scores = $("h2o-summary-scores");
+    scores.innerHTML = "";
+    state.teams.forEach((t) => {
+      const gained = (s.roundScores && s.roundScores[t.id]) || 0;
+      const row = document.createElement("div");
+      row.className = "final-row";
+      row.style.background = t.color;
+      const nameEl = document.createElement("span");
+      nameEl.textContent = t.name;
+      const ptsEl = document.createElement("span");
+      ptsEl.textContent = "+" + gained;
+      row.appendChild(nameEl);
+      row.appendChild(ptsEl);
+      scores.appendChild(row);
+    });
+
+    $("btn-h2o-continue").classList.toggle("hidden", !state.isHost);
+    $("h2o-wait-host").classList.toggle("hidden", !!state.isHost);
+  } else if (state.status === "finished") {
+    $("timer").textContent = "🏁";
+    $("view-finished").classList.remove("hidden");
+    setText("winner-name", state.winner ? `Победила команда «${state.winner.name}»!` : "—");
+    const fs = $("final-scoreboard");
+    fs.innerHTML = "";
+    state.teams
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .forEach((t) => {
+        const row = document.createElement("div");
+        row.className = "final-row";
+        row.style.background = t.color;
+        const nameEl = document.createElement("span");
+        nameEl.textContent = t.name;
+        const ptsEl = document.createElement("span");
+        ptsEl.textContent = t.score;
+        row.appendChild(nameEl);
+        row.appendChild(ptsEl);
         fs.appendChild(row);
       });
     $("btn-restart").classList.toggle("hidden", !state.isHost);

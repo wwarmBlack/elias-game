@@ -10,11 +10,38 @@
 
 <div id="app">
 
-  <!-- ЭКРАН 1: ГЛАВНАЯ (создать / войти / список комнат) -->
-  <section id="screen-home" class="screen active">
+  <!-- ЭКРАН 0: ХАБ (выбор игры) -->
+  <section id="screen-hub" class="screen active">
     <div class="card">
-      <h1 class="logo">🎤 Элиас</h1>
-      <p class="subtitle">Объясни слово — команда угадывает</p>
+      <h1 class="logo">🎉 Игровой хаб</h1>
+      <p class="subtitle">Выберите игру</p>
+
+      <p id="hub-reconnecting" class="muted hidden">Восстанавливаем сессию…</p>
+
+      <div id="hub-content">
+        <div class="game-pick-list">
+          <button class="game-pick-card" id="pick-elias">
+            <div class="game-pick-emoji">🎤</div>
+            <div class="game-pick-name">Элиас</div>
+            <div class="game-pick-desc">Объясни слово — команда угадывает</div>
+          </button>
+          <button class="game-pick-card" id="pick-h2o">
+            <div class="game-pick-emoji">💯</div>
+            <div class="game-pick-name">100 к 1</div>
+            <div class="game-pick-desc">Угадайте самые популярные (или редкие) ответы</div>
+          </button>
+        </div>
+        <button id="btn-hub-show-join" class="btn link">У меня есть код — присоединиться</button>
+        <button id="btn-hub-show-rooms" class="btn link">📋 Список комнат</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ЭКРАН 1: ГЛАВНАЯ (создать / войти / список комнат) -->
+  <section id="screen-home" class="screen">
+    <div class="card">
+      <h1 class="logo" id="home-logo">🎤 Элиас</h1>
+      <p class="subtitle" id="home-subtitle">Объясни слово — команда угадывает</p>
 
       <p id="reconnecting" class="muted hidden">Восстанавливаем сессию…</p>
 
@@ -27,23 +54,27 @@
           <button id="btn-join" class="btn primary">Войти в комнату</button>
           <button id="btn-show-create" class="btn link">У меня нет кода — создать комнату</button>
           <button id="btn-show-rooms-1" class="btn link">📋 Список комнат</button>
+          <button id="btn-home-back-1" class="btn link">← К выбору игры</button>
         </div>
 
         <div id="home-create">
           <h2>Создать игру</h2>
           <input id="create-name" maxlength="24" placeholder="Ваше имя (вы — хост)" />
           <input id="create-password" maxlength="32" placeholder="Пароль (необязательно)" />
-          <label class="field-label">Категория слов</label>
-          <select id="create-category">
-            <option value="easy">🟢 Легкие</option>
-            <option value="medium">🟡 Средние</option>
-            <option value="hard">🔴 Сложные</option>
-            <option value="netmonet">🍽️ Нетмонет</option>
-          </select>
-          <label class="checkbox-row"><input id="create-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
+          <div id="create-elias-options">
+            <label class="field-label">Категория слов</label>
+            <select id="create-category">
+              <option value="easy">🟢 Легкие</option>
+              <option value="medium">🟡 Средние</option>
+              <option value="hard">🔴 Сложные</option>
+              <option value="netmonet">🍽️ Нетмонет</option>
+            </select>
+            <label class="checkbox-row"><input id="create-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
+          </div>
           <button id="btn-create" class="btn primary">Создать комнату</button>
           <button id="btn-show-join" class="btn link">У меня есть код — присоединиться</button>
           <button id="btn-show-rooms-2" class="btn link">📋 Список комнат</button>
+          <button id="btn-home-back-2" class="btn link">← К выбору игры</button>
         </div>
 
         <div id="home-rooms" class="hidden">
@@ -75,26 +106,26 @@
 
       <div id="host-settings" class="settings-box hidden">
         <h3>Настройки игры (хост)</h3>
-        <div class="settings-row">
+        <div class="settings-row elias-only">
           <label>Время на ход (сек)</label>
           <input id="set-turn-seconds" type="number" min="15" max="180" />
         </div>
-        <div class="settings-row">
+        <div class="settings-row elias-only">
           <label>Режим победы</label>
           <select id="set-win-mode">
             <option value="score">До набора очков</option>
             <option value="rounds">Фиксированное число кругов</option>
           </select>
         </div>
-        <div class="settings-row" id="row-target-score">
+        <div class="settings-row elias-only" id="row-target-score">
           <label>Очков для победы</label>
           <input id="set-target-score" type="number" min="5" max="200" />
         </div>
-        <div class="settings-row hidden" id="row-max-rounds">
+        <div class="settings-row hidden elias-only" id="row-max-rounds">
           <label>Количество кругов</label>
           <input id="set-max-rounds" type="number" min="1" max="30" />
         </div>
-        <div class="settings-row">
+        <div class="settings-row elias-only">
           <label>Категория слов</label>
           <select id="set-category">
             <option value="easy">🟢 Легкие</option>
@@ -103,16 +134,21 @@
             <option value="netmonet">🍽️ Нетмонет</option>
           </select>
         </div>
+        <div class="settings-row h2o-only hidden">
+          <label>Количество раундов</label>
+          <input id="set-h2o-rounds" type="number" min="1" max="20" />
+        </div>
         <div class="settings-row password-row">
           <label>Пароль комнаты</label>
           <input id="set-password" maxlength="32" placeholder="Без пароля" />
           <button id="btn-save-password" class="btn small">Сохранить</button>
         </div>
-        <label class="checkbox-row"><input id="set-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
+        <label class="checkbox-row elias-only"><input id="set-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
         <button id="btn-add-team" class="btn small">+ Добавить команду</button>
       </div>
 
       <p id="mid-game-notice" class="muted hidden">🎮 Игра уже идёт — выберите команду, и вы подключитесь к игре с её следующего хода.</p>
+      <p id="h2o-captain-notice" class="muted hidden">💯 В этой игре в каждой команде нужно выбрать капитана — он будет печатать ответы.</p>
 
       <h3>Команды</h3>
       <div id="teams-container" class="teams-container"></div>
@@ -166,6 +202,30 @@
         <ul id="summary-words" class="summary-words"></ul>
         <button id="btn-continue" class="btn primary big hidden">Следующий ход ▶</button>
         <p id="wait-host" class="muted hidden">Ждём, когда хост запустит следующий ход…</p>
+      </div>
+
+      <!-- Раунд игры "100 к 1" -->
+      <div id="view-h2o-playing" class="hidden game-view">
+        <div class="turn-label" id="h2o-round-label">Раунд 1 из 6 · обычный</div>
+        <div class="h2o-prompt" id="h2o-prompt">Вопрос</div>
+        <div id="h2o-board" class="h2o-board"></div>
+        <div class="h2o-strikes" id="h2o-strikes">Промахи: ✗ ✗ ✗</div>
+        <div class="h2o-active-team" id="h2o-active-team">Отвечает команда «—»</div>
+        <div id="h2o-captain-input-box" class="hidden">
+          <input id="h2o-guess-input" maxlength="40" placeholder="Введите ответ…" />
+          <button id="btn-h2o-guess" class="btn primary">Ответить</button>
+        </div>
+        <p id="h2o-wait-captain" class="muted hidden">Ждём ответ капитана…</p>
+      </div>
+
+      <!-- Итоги раунда "100 к 1" -->
+      <div id="view-h2o-summary" class="hidden game-view">
+        <div class="turn-label">Раунд завершён</div>
+        <div class="h2o-prompt" id="h2o-summary-prompt">Вопрос</div>
+        <ul id="h2o-summary-answers" class="h2o-summary-answers"></ul>
+        <div id="h2o-summary-scores" class="h2o-summary-scores"></div>
+        <button id="btn-h2o-continue" class="btn primary big hidden">Следующий раунд ▶</button>
+        <p id="h2o-wait-host" class="muted hidden">Ждём, когда хост запустит следующий раунд…</p>
       </div>
 
       <!-- Финал игры -->

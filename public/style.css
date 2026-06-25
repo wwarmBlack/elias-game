@@ -186,3 +186,48 @@ input:focus, select:focus { outline: none; border-color: var(--accent-2); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-dark); margin: 4px 0 14px; cursor: pointer; }
 .checkbox-row input[type="checkbox"] { width: auto; margin: 0; flex-shrink: 0; }
 #mid-game-notice { background: #fff4d6; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; text-align: left; color: var(--text-dark); }
+#h2o-captain-notice { background: #e7f0ff; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; text-align: left; color: var(--text-dark); }
+
+/* Хаб: выбор игры */
+.game-pick-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+.game-pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: #faf9ff;
+  border: 2px solid #e7e4f5;
+  border-radius: var(--radius);
+  padding: 22px 16px;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.08s ease, border-color 0.15s ease;
+}
+.game-pick-card:active { transform: scale(0.97); }
+.game-pick-card:hover { border-color: var(--accent-2); }
+.game-pick-emoji { font-size: 2.2rem; }
+.game-pick-name { font-weight: 800; font-size: 1.1rem; color: var(--text-dark); }
+.game-pick-desc { font-size: 0.85rem; color: var(--text-muted); }
+
+/* Капитан команды (100 к 1) */
+.captain-btn { background: rgba(255,255,255,0.95); color: var(--text-dark); border: none; border-radius: 10px; padding: 8px 12px; font-weight: 600; cursor: pointer; font-size: 0.85rem; margin-top: 6px; }
+.captain-btn.is-captain { background: #ffd966; }
+.member-chip.is-captain { box-shadow: 0 0 0 2px white inset; font-weight: 700; }
+.member-chip.is-captain::after { content: " 👑"; }
+
+/* Игра "100 к 1" */
+.h2o-prompt { font-size: 1.15rem; font-weight: 700; margin-bottom: 16px; }
+.h2o-board { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.h2o-slot { display: flex; justify-content: space-between; align-items: center; background: #faf9ff; border-radius: 10px; padding: 12px 16px; font-weight: 600; }
+.h2o-slot.revealed { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; }
+.h2o-slot .slot-points { font-weight: 800; }
+.h2o-strikes { font-size: 1.2rem; margin-bottom: 10px; letter-spacing: 4px; }
+.h2o-active-team { font-weight: 700; margin-bottom: 14px; color: var(--text-muted); }
+#h2o-captain-input-box { display: flex; gap: 8px; }
+#h2o-captain-input-box input { margin-bottom: 0; flex: 1; }
+#h2o-captain-input-box .btn { width: auto; margin-bottom: 0; }
+.h2o-summary-answers { list-style: none; padding: 0; margin: 0 0 16px; text-align: left; }
+.h2o-summary-answers li { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 10px; margin-bottom: 6px; background: #faf9ff; }
+.h2o-summary-answers li.missed { opacity: 0.5; }
+.h2o-summary-scores { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.h2o-summary-scores .final-row { display: flex; justify-content: space-between; padding: 10px 14px; border-radius: 10px; color: white; font-weight: 700; }
