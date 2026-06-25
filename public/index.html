@@ -40,6 +40,7 @@
             <option value="hard">🔴 Сложные</option>
             <option value="netmonet">🍽️ Нетмонет</option>
           </select>
+          <label class="checkbox-row"><input id="create-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
           <button id="btn-create" class="btn primary">Создать комнату</button>
           <button id="btn-show-join" class="btn link">У меня есть код — присоединиться</button>
           <button id="btn-show-rooms-2" class="btn link">📋 Список комнат</button>
@@ -107,8 +108,11 @@
           <input id="set-password" maxlength="32" placeholder="Без пароля" />
           <button id="btn-save-password" class="btn small">Сохранить</button>
         </div>
+        <label class="checkbox-row"><input id="set-penalize" type="checkbox" /> Минус балл команде за «Пропустить»</label>
         <button id="btn-add-team" class="btn small">+ Добавить команду</button>
       </div>
+
+      <p id="mid-game-notice" class="muted hidden">🎮 Игра уже идёт — выберите команду, и вы подключитесь к игре с её следующего хода.</p>
 
       <h3>Команды</h3>
       <div id="teams-container" class="teams-container"></div>

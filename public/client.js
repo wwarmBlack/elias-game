@@ -125,6 +125,7 @@ $("btn-create").onclick = () => {
     name,
     password: $("create-password").value.trim(),
     category: $("create-category").value,
+    penalizeSkips: $("create-penalize").checked,
     playerToken,
   });
 };
@@ -198,6 +199,7 @@ $("set-turn-seconds").onchange = pushSettings;
 $("set-target-score").onchange = pushSettings;
 $("set-max-rounds").onchange = pushSettings;
 $("set-category").onchange = pushSettings;
+$("set-penalize").onchange = pushSettings;
 
 function pushSettings() {
   socket.emit("update_settings", {
@@ -206,6 +208,7 @@ function pushSettings() {
     targetScore: parseInt($("set-target-score").value, 10),
     maxRounds: parseInt($("set-max-rounds").value, 10),
     wordCategory: $("set-category").value,
+    penalizeSkips: $("set-penalize").checked,
   });
 }
 
@@ -230,7 +233,12 @@ socket.on("state", (state) => {
   $("home-content").classList.remove("hidden");
   rememberRoom(state.code, state.me ? state.me.name : myName);
 
-  if (state.status === "lobby") {
+  // Игрок без команды (например, только что присоединился во время уже
+  // идущей игры) всегда видит экран выбора команды — кроме хоста, у
+  // которого свои элементы управления на игровом экране.
+  const needsTeamChoice = !state.isHost && !state.me?.teamId && state.status !== "lobby";
+
+  if (state.status === "lobby" || needsTeamChoice) {
     renderLobby(state);
     show("screen-lobby");
   } else {
@@ -247,9 +255,12 @@ function renderLobby(state) {
   $("set-target-score").value = state.settings.targetScore;
   $("set-max-rounds").value = state.settings.maxRounds;
   $("set-category").value = state.settings.wordCategory;
+  $("set-penalize").checked = !!state.settings.penalizeSkips;
   $("set-password").placeholder = state.hasPassword ? "Пароль установлен (оставьте пустым, чтобы убрать)" : "Без пароля";
   $("row-target-score").classList.toggle("hidden", state.settings.winMode === "rounds");
   $("row-max-rounds").classList.toggle("hidden", state.settings.winMode !== "rounds");
+
+  $("mid-game-notice").classList.toggle("hidden", state.status === "lobby");
 
   const container = $("teams-container");
   container.innerHTML = "";
@@ -379,7 +390,7 @@ function renderGame(state) {
       word.textContent = w.word;
       const tag = document.createElement("span");
       tag.className = "tag";
-      tag.textContent = w.result === "correct" ? "+1" : "пропуск";
+      tag.textContent = w.result === "correct" ? "+1" : state.settings.penalizeSkips ? "−1" : "пропуск";
       li.appendChild(word);
       li.appendChild(tag);
       list.appendChild(li);

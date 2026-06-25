@@ -181,3 +181,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent-2); }
 .settings-row.password-row { flex-wrap: wrap; }
 .settings-row.password-row input { width: auto; flex: 1; margin-bottom: 0; }
 .settings-row.password-row .btn.small { margin-bottom: 0; flex-shrink: 0; }
+
+/* Чекбокс "минус балл за пропуск" + уведомление о подключении во время игры */
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-dark); margin: 4px 0 14px; cursor: pointer; }
+.checkbox-row input[type="checkbox"] { width: auto; margin: 0; flex-shrink: 0; }
+#mid-game-notice { background: #fff4d6; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; text-align: left; color: var(--text-dark); }
