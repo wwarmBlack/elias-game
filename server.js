@@ -14,6 +14,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const WORDS = require("./words");
+const QUESTIONS = require("./questions");
 
 const app = express();
 const server = http.createServer(app);
@@ -22,8 +23,10 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const TEAM_COLORS = ["#e63946", "#1d8a99", "#f4a300", "#6a4c93", "#2a9d8f", "#e07a5f"];
 const WORD_CATEGORIES = ["easy", "medium", "hard", "netmonet"];
+const GAME_TYPES = ["elias", "hundredToOne"];
 const EMPTY_ROOM_TTL_MS = 15 * 60 * 1000; // комната без игроков удаляется через 15 минут
 const HOST_GRACE_MS = 2 * 60 * 1000; // если хост не возвращается 2 минуты — роль хоста передаётся другому
+const H2O_MAX_STRIKES = 3; // суммарно неверных ответов за раунд «100 к 1», после которых раунд завершается
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -53,10 +56,11 @@ function shuffle(arr) {
   return a;
 }
 
-function createRoom(hostToken, hostName, password, category, penalizeSkips) {
+function createRoom(hostToken, hostName, password, category, penalizeSkips, gameType) {
   const code = generateRoomCode();
   const room = {
     code,
+    gameType: GAME_TYPES.includes(gameType) ? gameType : "elias",
     hostToken,
     hostGraceTimer: null,
     password: password ? password : null,
@@ -70,11 +74,12 @@ function createRoom(hostToken, hostName, password, category, penalizeSkips) {
       maxRounds: 6,
       wordCategory: WORD_CATEGORIES.includes(category) ? category : "easy",
       penalizeSkips: !!penalizeSkips, // минус 1 балл команде за нажатие "Пропустить"
+      h2oRounds: 6, // количество раундов в игре «100 к 1»
     },
     players: new Map(), // playerToken -> { token, name, teamId, connected, socketId }
     teams: [
-      { id: "t1", name: "Команда 1", color: TEAM_COLORS[0], score: 0, memberOrder: [], explainerPointer: 0 },
-      { id: "t2", name: "Команда 2", color: TEAM_COLORS[1], score: 0, memberOrder: [], explainerPointer: 0 },
+      { id: "t1", name: "Команда 1", color: TEAM_COLORS[0], score: 0, memberOrder: [], explainerPointer: 0, captainToken: null },
+      { id: "t2", name: "Команда 2", color: TEAM_COLORS[1], score: 0, memberOrder: [], explainerPointer: 0, captainToken: null },
     ],
     turnOrder: [], // массив id команд в порядке ходов (заполняется при старте)
     currentTeamIndex: 0,
@@ -82,6 +87,7 @@ function createRoom(hostToken, hostName, password, category, penalizeSkips) {
     wordPool: [],
     usedWords: [],
     turn: null, // { teamId, explainerId, word, wordsThisTurn: [{word, result}], remaining, timer }
+    h2o: null, // состояние игры «100 к 1» (см. startH2OGame)
     lastSummary: null,
   };
   room.players.set(hostToken, { token: hostToken, name: hostName, teamId: null, connected: true, socketId: null });
@@ -230,6 +236,109 @@ function endTurnSkipTeam(room) {
 }
 
 // --------------------------------------------------------------------------
+// Игра «100 к 1»
+// --------------------------------------------------------------------------
+
+function normalizeGuess(s) {
+  return String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9 ]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickH2OQuestionOrder(count) {
+  const total = QUESTIONS.general.length;
+  const n = Math.min(count, total);
+  return shuffle([...Array(total).keys()]).slice(0, n);
+}
+
+// Возвращает массив очков для каждого ответа (в порядке исходного списка
+// answers, который уже отсортирован от самого популярного к самому
+// непопулярному). В обратном раунде ценность переворачивается.
+function computeDisplayPoints(answers, roundType) {
+  const base = answers.map((a) => a.points);
+  if (roundType === "reverse") {
+    const n = base.length;
+    return base.map((_, i) => base[n - 1 - i]);
+  }
+  return base.slice();
+}
+
+function startH2OGame(room) {
+  const teamsWithPlayers = room.teams.filter((t) => t.memberOrder.length > 0);
+  room.teams.forEach((t) => {
+    t.score = 0;
+  });
+  const totalRounds = Math.min(room.settings.h2oRounds || 6, QUESTIONS.general.length);
+  room.h2o = {
+    totalRounds,
+    questionOrder: pickH2OQuestionOrder(totalRounds),
+    roundIndex: 0,
+    roundType: "normal",
+    question: null,
+    revealed: [],
+    strikes: 0,
+    activeTeamId: null,
+    roundScores: {},
+    order: shuffle(teamsWithPlayers.map((t) => t.id)),
+  };
+  room.lastSummary = null;
+  startH2ORound(room);
+}
+
+function startH2ORound(room) {
+  const h = room.h2o;
+  const qIdx = h.questionOrder[h.roundIndex];
+  const qSource = QUESTIONS.general[qIdx];
+  h.roundType = h.roundIndex % 2 === 0 ? "normal" : "reverse";
+  const displayPoints = computeDisplayPoints(qSource.answers, h.roundType);
+  h.question = {
+    prompt: qSource.prompt,
+    answers: qSource.answers.map((a, i) => ({
+      text: a.text,
+      synonyms: a.synonyms || [],
+      displayPoints: displayPoints[i],
+    })),
+  };
+  h.revealed = [];
+  h.strikes = 0;
+  h.roundScores = {};
+  room.teams.forEach((t) => {
+    h.roundScores[t.id] = 0;
+  });
+  h.activeTeamId = h.order[h.roundIndex % h.order.length];
+  room.status = "playing";
+  broadcastState(room);
+}
+
+function endH2ORound(room, reason) {
+  const h = room.h2o;
+  room.lastSummary = {
+    gameType: "hundredToOne",
+    roundType: h.roundType,
+    prompt: h.question.prompt,
+    answers: h.question.answers.map((a, i) => ({
+      text: a.text,
+      points: a.displayPoints,
+      revealed: h.revealed.includes(i),
+    })),
+    roundScores: { ...h.roundScores },
+    reason: reason || "cleared", // cleared | strikes
+  };
+  h.question = null;
+  h.roundIndex += 1;
+  if (h.roundIndex >= h.totalRounds) {
+    room.status = "finished";
+  } else {
+    room.status = "turn_summary";
+  }
+  broadcastState(room);
+}
+
+// --------------------------------------------------------------------------
 // Передача роли хоста, если исходный хост долго не возвращается
 // --------------------------------------------------------------------------
 
@@ -290,8 +399,11 @@ function buildView(room, token) {
   const isExplainer = !!room.turn && room.turn.explainerId === token;
   const isHost = room.hostToken === token;
 
+  const h = room.h2o;
+
   return {
     code: room.code,
+    gameType: room.gameType,
     status: room.status,
     isHost,
     hasPassword: !!room.password,
@@ -302,6 +414,7 @@ function buildView(room, token) {
       name: t.name,
       color: t.color,
       score: t.score,
+      captainId: t.captainToken || null,
       members: t.memberOrder
         .map((tok) => room.players.get(tok))
         .filter(Boolean)
@@ -320,6 +433,25 @@ function buildView(room, token) {
           guessedCount: room.turn.wordsThisTurn.filter((w) => w.result === "correct").length,
         }
       : null,
+    h2o:
+      room.gameType === "hundredToOne" && h
+        ? {
+            roundIndex: h.roundIndex,
+            totalRounds: h.totalRounds,
+            roundType: h.roundType,
+            strikes: h.strikes,
+            maxStrikes: H2O_MAX_STRIKES,
+            activeTeamId: h.activeTeamId,
+            prompt: h.question ? h.question.prompt : null,
+            answers: h.question
+              ? h.question.answers.map((a, i) => ({
+                  points: a.displayPoints,
+                  text: h.revealed.includes(i) ? a.text : null,
+                  revealed: h.revealed.includes(i),
+                }))
+              : [],
+          }
+        : null,
     lastSummary: room.status === "turn_summary" ? room.lastSummary : null,
     winner:
       room.status === "finished"
@@ -343,6 +475,7 @@ function publicRoomsList() {
       const hostPlayer = room.players.get(room.hostToken);
       return {
         code: room.code,
+        gameType: room.gameType,
         hostName: hostPlayer ? hostPlayer.name : "—",
         playerCount: connectedCount,
         totalPlayers: room.players.size,
@@ -360,14 +493,14 @@ function publicRoomsList() {
 // --------------------------------------------------------------------------
 
 io.on("connection", (socket) => {
-  socket.on("create_room", ({ name, password, category, playerToken, penalizeSkips }) => {
+  socket.on("create_room", ({ name, password, category, playerToken, penalizeSkips, gameType }) => {
     if (!playerToken) {
       socket.emit("error_message", "Ошибка идентификации. Обновите страницу и попробуйте снова.");
       return;
     }
     const hostName = (name || "Хост").trim().slice(0, 24) || "Хост";
     const pass = (password || "").trim().slice(0, 32);
-    const room = createRoom(playerToken, hostName, pass, category, penalizeSkips);
+    const room = createRoom(playerToken, hostName, pass, category, penalizeSkips, gameType);
     room.players.get(playerToken).socketId = socket.id;
     socket.join(room.code);
     socket.data.roomCode = room.code;
@@ -472,9 +605,61 @@ io.on("connection", (socket) => {
     // убрать из прежней команды
     room.teams.forEach((t) => {
       t.memberOrder = t.memberOrder.filter((id) => id !== token);
+      if (t.captainToken === token) t.captainToken = null;
     });
     team.memberOrder.push(token);
     player.teamId = teamId;
+    broadcastState(room);
+  });
+
+  socket.on("set_captain", ({ teamId }) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room) return;
+    const token = socket.data.playerToken;
+    const team = room.teams.find((t) => t.id === teamId);
+    if (!team || !team.memberOrder.includes(token)) return;
+    team.captainToken = token;
+    broadcastState(room);
+  });
+
+  socket.on("h2o_guess", ({ text }) => {
+    const room = getRoom(socket.data.roomCode);
+    const token = socket.data.playerToken;
+    if (!room || room.gameType !== "hundredToOne" || room.status !== "playing" || !room.h2o || !room.h2o.question) return;
+    const h = room.h2o;
+    const team = room.teams.find((t) => t.id === h.activeTeamId);
+    if (!team || team.captainToken !== token) return;
+    const guess = normalizeGuess(text);
+    if (!guess) return;
+
+    let matchIdx = -1;
+    h.question.answers.forEach((a, i) => {
+      if (matchIdx !== -1 || h.revealed.includes(i)) return;
+      const candidates = [a.text, ...(a.synonyms || [])].map(normalizeGuess);
+      if (candidates.includes(guess)) matchIdx = i;
+    });
+
+    if (matchIdx === -1) {
+      h.strikes += 1;
+      if (h.strikes >= H2O_MAX_STRIKES) {
+        endH2ORound(room, "strikes");
+        return;
+      }
+      // передаём ход другой команде
+      const otherTeamId = h.order.find((id) => id !== h.activeTeamId);
+      if (otherTeamId) h.activeTeamId = otherTeamId;
+      broadcastState(room);
+      return;
+    }
+
+    h.revealed.push(matchIdx);
+    const pts = h.question.answers[matchIdx].displayPoints;
+    team.score += pts;
+    h.roundScores[team.id] = (h.roundScores[team.id] || 0) + pts;
+    if (h.revealed.length >= h.question.answers.length) {
+      endH2ORound(room, "cleared");
+      return;
+    }
     broadcastState(room);
   });
 
@@ -490,6 +675,7 @@ io.on("connection", (socket) => {
       score: 0,
       memberOrder: [],
       explainerPointer: 0,
+      captainToken: null,
     });
     broadcastState(room);
   });
@@ -527,6 +713,7 @@ io.on("connection", (socket) => {
     if (Number.isFinite(patch.maxRounds)) s.maxRounds = Math.min(30, Math.max(1, Math.round(patch.maxRounds)));
     if (WORD_CATEGORIES.includes(patch.wordCategory)) s.wordCategory = patch.wordCategory;
     if (typeof patch.penalizeSkips === "boolean") s.penalizeSkips = patch.penalizeSkips;
+    if (Number.isFinite(patch.h2oRounds)) s.h2oRounds = Math.min(20, Math.max(1, Math.round(patch.h2oRounds)));
     if (typeof patch.password === "string") {
       room.password = patch.password.trim().slice(0, 32) || null;
     }
@@ -542,6 +729,19 @@ io.on("connection", (socket) => {
       socket.emit("error_message", "Нужно минимум 2 команды с игроками.");
       return;
     }
+
+    if (room.gameType === "hundredToOne") {
+      const missingCaptain = teamsWithPlayers.some(
+        (t) => !t.captainToken || !t.memberOrder.includes(t.captainToken)
+      );
+      if (missingCaptain) {
+        socket.emit("error_message", "В каждой играющей команде нужно выбрать капитана.");
+        return;
+      }
+      startH2OGame(room);
+      return;
+    }
+
     room.teams.forEach((t) => {
       t.score = 0;
       t.explainerPointer = 0;
@@ -576,7 +776,11 @@ io.on("connection", (socket) => {
     const room = getRoom(socket.data.roomCode);
     if (!room || room.hostToken !== socket.data.playerToken) return;
     if (room.status !== "turn_summary") return;
-    startTurn(room);
+    if (room.gameType === "hundredToOne") {
+      startH2ORound(room);
+    } else {
+      startTurn(room);
+    }
   });
 
   socket.on("end_game_now", () => {
@@ -586,6 +790,7 @@ io.on("connection", (socket) => {
       clearInterval(room.turn.timer);
       room.turn = null;
     }
+    if (room.h2o) room.h2o.question = null;
     room.status = "finished";
     broadcastState(room);
   });
