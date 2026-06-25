@@ -2,6 +2,7 @@ const socket = io();
 
 let myState = null; // последний полученный "state" от сервера
 let myName = "";
+let roomsRefreshTimer = null;
 
 // ---------- утилиты ----------
 const $ = (id) => document.getElementById(id);
@@ -10,31 +11,122 @@ function show(screenId) {
   $(screenId).classList.add("active");
 }
 function setText(id, text) { $(id).textContent = text; }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---------- стабильный идентификатор игрока (чтобы переживать перезагрузку) ----------
+function genToken() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "p_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+let playerToken = localStorage.getItem("eliasPlayerToken");
+if (!playerToken) {
+  playerToken = genToken();
+  localStorage.setItem("eliasPlayerToken", playerToken);
+}
+let lastRoomCode = localStorage.getItem("eliasRoomCode") || "";
+let lastName = localStorage.getItem("eliasName") || "";
+myName = lastName;
+
+function rememberRoom(code, name) {
+  localStorage.setItem("eliasRoomCode", code);
+  if (name) localStorage.setItem("eliasName", name);
+}
+function forgetRoom() {
+  localStorage.removeItem("eliasRoomCode");
+}
 
 // ---------- параметры ссылки (?room=CODE) ----------
 const urlParams = new URLSearchParams(location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) {
+if (prefillRoom && !lastRoomCode) {
   $("join-code").value = prefillRoom.toUpperCase();
   $("home-create").classList.add("hidden");
   $("home-join").classList.remove("hidden");
 }
 
-// ---------- экран "главная" ----------
-$("btn-show-join").onclick = () => {
-  $("home-create").classList.add("hidden");
-  $("home-join").classList.remove("hidden");
-};
-$("btn-show-create").onclick = () => {
-  $("home-join").classList.add("hidden");
-  $("home-create").classList.remove("hidden");
-};
+// ---------- тихое переподключение к последней комнате после перезагрузки ----------
+let attemptedSilentRejoin = false;
+socket.on("connect", () => {
+  if (lastRoomCode && !attemptedSilentRejoin) {
+    attemptedSilentRejoin = true;
+    $("reconnecting").classList.remove("hidden");
+    $("home-content").classList.add("hidden");
+    socket.emit("join_room", { code: lastRoomCode, name: lastName, playerToken, silent: true });
+  }
+});
+
+socket.on("rejoin_failed", () => {
+  forgetRoom();
+  $("reconnecting").classList.add("hidden");
+  $("home-content").classList.remove("hidden");
+});
+
+// ---------- навигация по главному экрану ----------
+function showHomeSection(section) {
+  ["home-join", "home-create", "home-rooms"].forEach((id) => $(id).classList.toggle("hidden", id !== section));
+  if (section === "home-rooms") {
+    refreshRoomsList();
+    if (!roomsRefreshTimer) roomsRefreshTimer = setInterval(refreshRoomsList, 5000);
+  } else if (roomsRefreshTimer) {
+    clearInterval(roomsRefreshTimer);
+    roomsRefreshTimer = null;
+  }
+}
+$("btn-show-join").onclick = () => showHomeSection("home-join");
+$("btn-show-create").onclick = () => showHomeSection("home-create");
+$("btn-show-rooms-1").onclick = () => showHomeSection("home-rooms");
+$("btn-show-rooms-2").onclick = () => showHomeSection("home-rooms");
+$("btn-rooms-back").onclick = () => showHomeSection("home-create");
+$("btn-rooms-refresh").onclick = refreshRoomsList;
+
+const CATEGORY_LABELS = { easy: "🟢 Легкие", medium: "🟡 Средние", hard: "🔴 Сложные", netmonet: "🍽️ Нетмонет" };
+const STATUS_LABELS = { lobby: "В лобби", playing: "Игра идёт", turn_summary: "Игра идёт", finished: "Игра завершена" };
+
+function refreshRoomsList() {
+  socket.emit("list_rooms", (rooms) => {
+    const list = $("rooms-list");
+    list.innerHTML = "";
+    $("rooms-empty").classList.toggle("hidden", rooms.length > 0);
+    rooms.forEach((r) => {
+      const card = document.createElement("div");
+      card.className = "room-card";
+
+      const main = document.createElement("div");
+      main.className = "room-card-main";
+      main.innerHTML = `
+        <div class="room-card-code">${escapeHtml(r.code)} ${r.hasPassword ? "🔒" : ""}</div>
+        <div class="room-card-meta">Хост: ${escapeHtml(r.hostName)} · ${r.playerCount} онлайн · ${CATEGORY_LABELS[r.category] || ""} · ${STATUS_LABELS[r.status] || ""}</div>
+      `;
+      card.appendChild(main);
+
+      const joinBtn = document.createElement("button");
+      joinBtn.className = "btn small";
+      joinBtn.textContent = "Войти";
+      joinBtn.onclick = () => {
+        $("join-code").value = r.code;
+        showHomeSection("home-join");
+        if (r.hasPassword) $("join-password").focus();
+        else $("join-name").focus();
+      };
+      card.appendChild(joinBtn);
+
+      list.appendChild(card);
+    });
+  });
+}
 
 $("btn-create").onclick = () => {
   const name = $("create-name").value.trim();
   if (!name) return showHomeError("Введите имя");
   myName = name;
-  socket.emit("create_room", { name });
+  socket.emit("create_room", {
+    name,
+    password: $("create-password").value.trim(),
+    category: $("create-category").value,
+    playerToken,
+  });
 };
 
 $("btn-join").onclick = () => {
@@ -43,7 +135,12 @@ $("btn-join").onclick = () => {
   if (!code) return showHomeError("Введите код комнаты");
   if (!name) return showHomeError("Введите имя");
   myName = name;
-  socket.emit("join_room", { code, name });
+  socket.emit("join_room", {
+    code,
+    name,
+    password: $("join-password").value.trim(),
+    playerToken,
+  });
 };
 
 function showHomeError(msg) {
@@ -58,6 +155,22 @@ socket.on("error_message", (msg) => {
     showHomeError(msg);
   }
 });
+
+// ---------- выход из комнаты ----------
+function leaveRoom() {
+  socket.emit("leave_room");
+  forgetRoom();
+  myState = null;
+  $("home-error").classList.add("hidden");
+  $("reconnecting").classList.add("hidden");
+  $("home-content").classList.remove("hidden");
+  showHomeSection("home-create");
+  show("screen-home");
+}
+$("btn-leave-lobby").onclick = leaveRoom;
+$("btn-leave-game").onclick = () => {
+  if (confirm("Выйти из игры?")) leaveRoom();
+};
 
 // ---------- копирование ссылки-приглашения ----------
 $("btn-copy-link").onclick = () => {
@@ -84,6 +197,7 @@ $("set-win-mode").onchange = () => {
 $("set-turn-seconds").onchange = pushSettings;
 $("set-target-score").onchange = pushSettings;
 $("set-max-rounds").onchange = pushSettings;
+$("set-category").onchange = pushSettings;
 
 function pushSettings() {
   socket.emit("update_settings", {
@@ -91,8 +205,14 @@ function pushSettings() {
     winMode: $("set-win-mode").value,
     targetScore: parseInt($("set-target-score").value, 10),
     maxRounds: parseInt($("set-max-rounds").value, 10),
+    wordCategory: $("set-category").value,
   });
 }
+
+$("btn-save-password").onclick = () => {
+  socket.emit("update_settings", { password: $("set-password").value });
+  flashButton($("btn-save-password"), "✓");
+};
 
 $("btn-add-team").onclick = () => socket.emit("add_team");
 $("btn-start-game").onclick = () => socket.emit("start_game");
@@ -106,6 +226,9 @@ $("btn-restart").onclick = () => socket.emit("start_game");
 // ---------- основной рендер по состоянию с сервера ----------
 socket.on("state", (state) => {
   myState = state;
+  $("reconnecting").classList.add("hidden");
+  $("home-content").classList.remove("hidden");
+  rememberRoom(state.code, state.me ? state.me.name : myName);
 
   if (state.status === "lobby") {
     renderLobby(state);
@@ -123,6 +246,8 @@ function renderLobby(state) {
   $("set-win-mode").value = state.settings.winMode;
   $("set-target-score").value = state.settings.targetScore;
   $("set-max-rounds").value = state.settings.maxRounds;
+  $("set-category").value = state.settings.wordCategory;
+  $("set-password").placeholder = state.hasPassword ? "Пароль установлен (оставьте пустым, чтобы убрать)" : "Без пароля";
   $("row-target-score").classList.toggle("hidden", state.settings.winMode === "rounds");
   $("row-max-rounds").classList.toggle("hidden", state.settings.winMode !== "rounds");
 

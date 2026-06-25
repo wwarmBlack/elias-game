@@ -10,28 +10,51 @@
 
 <div id="app">
 
-  <!-- ЭКРАН 1: ГЛАВНАЯ (создать / войти) -->
+  <!-- ЭКРАН 1: ГЛАВНАЯ (создать / войти / список комнат) -->
   <section id="screen-home" class="screen active">
     <div class="card">
       <h1 class="logo">🎤 Элиас</h1>
       <p class="subtitle">Объясни слово — команда угадывает</p>
 
-      <div id="home-join" class="hidden">
-        <h2>Присоединиться</h2>
-        <input id="join-code" maxlength="6" placeholder="КОД КОМНАТЫ" autocapitalize="characters" />
-        <input id="join-name" maxlength="24" placeholder="Ваше имя" />
-        <button id="btn-join" class="btn primary">Войти в комнату</button>
-        <button id="btn-show-create" class="btn link">У меня нет кода — создать комнату</button>
-      </div>
+      <p id="reconnecting" class="muted hidden">Восстанавливаем сессию…</p>
 
-      <div id="home-create">
-        <h2>Создать игру</h2>
-        <input id="create-name" maxlength="24" placeholder="Ваше имя (вы — хост)" />
-        <button id="btn-create" class="btn primary">Создать комнату</button>
-        <button id="btn-show-join" class="btn link">У меня есть код — присоединиться</button>
-      </div>
+      <div id="home-content">
+        <div id="home-join" class="hidden">
+          <h2>Присоединиться</h2>
+          <input id="join-code" maxlength="6" placeholder="КОД КОМНАТЫ" autocapitalize="characters" />
+          <input id="join-name" maxlength="24" placeholder="Ваше имя" />
+          <input id="join-password" maxlength="32" placeholder="Пароль (если есть)" />
+          <button id="btn-join" class="btn primary">Войти в комнату</button>
+          <button id="btn-show-create" class="btn link">У меня нет кода — создать комнату</button>
+          <button id="btn-show-rooms-1" class="btn link">📋 Список комнат</button>
+        </div>
 
-      <p id="home-error" class="error hidden"></p>
+        <div id="home-create">
+          <h2>Создать игру</h2>
+          <input id="create-name" maxlength="24" placeholder="Ваше имя (вы — хост)" />
+          <input id="create-password" maxlength="32" placeholder="Пароль (необязательно)" />
+          <label class="field-label">Категория слов</label>
+          <select id="create-category">
+            <option value="easy">🟢 Легкие</option>
+            <option value="medium">🟡 Средние</option>
+            <option value="hard">🔴 Сложные</option>
+            <option value="netmonet">🍽️ Нетмонет</option>
+          </select>
+          <button id="btn-create" class="btn primary">Создать комнату</button>
+          <button id="btn-show-join" class="btn link">У меня есть код — присоединиться</button>
+          <button id="btn-show-rooms-2" class="btn link">📋 Список комнат</button>
+        </div>
+
+        <div id="home-rooms" class="hidden">
+          <h2>Активные комнаты</h2>
+          <div id="rooms-list" class="rooms-list"></div>
+          <p id="rooms-empty" class="muted hidden">Сейчас нет открытых комнат.</p>
+          <button id="btn-rooms-refresh" class="btn small">🔄 Обновить</button>
+          <button id="btn-rooms-back" class="btn link">← Назад</button>
+        </div>
+
+        <p id="home-error" class="error hidden"></p>
+      </div>
     </div>
   </section>
 
@@ -43,7 +66,10 @@
           <div class="room-label">Код комнаты</div>
           <div class="room-code" id="lobby-code">—</div>
         </div>
-        <button id="btn-copy-link" class="btn small">🔗 Скопировать ссылку</button>
+        <div class="lobby-header-actions">
+          <button id="btn-copy-link" class="btn small">🔗 Скопировать ссылку</button>
+          <button id="btn-leave-lobby" class="btn small danger">🚪 Выйти</button>
+        </div>
       </div>
 
       <div id="host-settings" class="settings-box hidden">
@@ -67,6 +93,20 @@
           <label>Количество кругов</label>
           <input id="set-max-rounds" type="number" min="1" max="30" />
         </div>
+        <div class="settings-row">
+          <label>Категория слов</label>
+          <select id="set-category">
+            <option value="easy">🟢 Легкие</option>
+            <option value="medium">🟡 Средние</option>
+            <option value="hard">🔴 Сложные</option>
+            <option value="netmonet">🍽️ Нетмонет</option>
+          </select>
+        </div>
+        <div class="settings-row password-row">
+          <label>Пароль комнаты</label>
+          <input id="set-password" maxlength="32" placeholder="Без пароля" />
+          <button id="btn-save-password" class="btn small">Сохранить</button>
+        </div>
         <button id="btn-add-team" class="btn small">+ Добавить команду</button>
       </div>
 
@@ -87,6 +127,7 @@
       <div class="game-topbar">
         <div id="scoreboard" class="scoreboard"></div>
         <div id="timer" class="timer">60</div>
+        <button id="btn-leave-game" class="btn small danger">🚪 Выйти</button>
       </div>
 
       <!-- Вид объясняющего -->

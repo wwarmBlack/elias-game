@@ -162,3 +162,22 @@ input:focus, select:focus { outline: none; border-color: var(--accent-2); }
   .word-card { font-size: 1.7rem; padding: 40px 12px; }
   .card { padding: 20px 16px; }
 }
+
+/* Главная: метка поля, кнопка выхода, список комнат */
+.field-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; display: block; }
+
+.lobby-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.danger { background: #fdecea; color: var(--danger); }
+
+#reconnecting { margin: 24px 0; }
+
+.rooms-list { display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; margin-bottom: 14px; }
+.room-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #faf9ff; border-radius: 12px; padding: 12px 14px; }
+.room-card-main { flex: 1; min-width: 0; }
+.room-card-code { font-weight: 800; letter-spacing: 0.08em; }
+.room-card-meta { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.room-card .btn.small { margin-bottom: 0; flex-shrink: 0; }
+
+.settings-row.password-row { flex-wrap: wrap; }
+.settings-row.password-row input { width: auto; flex: 1; margin-bottom: 0; }
+.settings-row.password-row .btn.small { margin-bottom: 0; flex-shrink: 0; }
