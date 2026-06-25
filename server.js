@@ -53,7 +53,7 @@ function shuffle(arr) {
   return a;
 }
 
-function createRoom(hostToken, hostName, password, category) {
+function createRoom(hostToken, hostName, password, category, penalizeSkips) {
   const code = generateRoomCode();
   const room = {
     code,
@@ -69,6 +69,7 @@ function createRoom(hostToken, hostName, password, category) {
       targetScore: 30,
       maxRounds: 6,
       wordCategory: WORD_CATEGORIES.includes(category) ? category : "easy",
+      penalizeSkips: !!penalizeSkips, // минус 1 балл команде за нажатие "Пропустить"
     },
     players: new Map(), // playerToken -> { token, name, teamId, connected, socketId }
     teams: [
@@ -359,14 +360,14 @@ function publicRoomsList() {
 // --------------------------------------------------------------------------
 
 io.on("connection", (socket) => {
-  socket.on("create_room", ({ name, password, category, playerToken }) => {
+  socket.on("create_room", ({ name, password, category, playerToken, penalizeSkips }) => {
     if (!playerToken) {
       socket.emit("error_message", "Ошибка идентификации. Обновите страницу и попробуйте снова.");
       return;
     }
     const hostName = (name || "Хост").trim().slice(0, 24) || "Хост";
     const pass = (password || "").trim().slice(0, 32);
-    const room = createRoom(playerToken, hostName, pass, category);
+    const room = createRoom(playerToken, hostName, pass, category, penalizeSkips);
     room.players.get(playerToken).socketId = socket.id;
     socket.join(room.code);
     socket.data.roomCode = room.code;
@@ -410,11 +411,8 @@ io.on("connection", (socket) => {
       else socket.emit("error_message", "Неверный пароль комнаты.");
       return;
     }
-    if (room.status !== "lobby") {
-      if (silent) socket.emit("rejoin_failed");
-      else socket.emit("error_message", "Игра уже идёт. Дождитесь её завершения, чтобы присоединиться.");
-      return;
-    }
+    // Присоединиться можно даже если игра уже идёт — новый игрок выбирает
+    // команду и подключается к игре с её следующего хода.
     const playerName = (name || "Игрок").trim().slice(0, 24) || "Игрок";
     room.players.set(playerToken, {
       token: playerToken,
@@ -528,6 +526,7 @@ io.on("connection", (socket) => {
     if (Number.isFinite(patch.targetScore)) s.targetScore = Math.min(200, Math.max(5, Math.round(patch.targetScore)));
     if (Number.isFinite(patch.maxRounds)) s.maxRounds = Math.min(30, Math.max(1, Math.round(patch.maxRounds)));
     if (WORD_CATEGORIES.includes(patch.wordCategory)) s.wordCategory = patch.wordCategory;
+    if (typeof patch.penalizeSkips === "boolean") s.penalizeSkips = patch.penalizeSkips;
     if (typeof patch.password === "string") {
       room.password = patch.password.trim().slice(0, 32) || null;
     }
@@ -564,6 +563,7 @@ io.on("connection", (socket) => {
     const team = room.teams.find((t) => t.id === room.turn.teamId);
     room.turn.wordsThisTurn.push({ word: room.turn.word, result });
     if (result === "correct") team.score += 1;
+    else if (result === "skip" && room.settings.penalizeSkips) team.score -= 1;
     if (checkGameEnd(room) && result === "correct") {
       endTurn(room, "time");
       return;
